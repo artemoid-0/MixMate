@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat with Cocktails Bot</title>
+    <style>
+        /* Стили для чата */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f7f7f7;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .chat-container {
+            width: 100%;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            height: 70vh;  /* Ограничим высоту чата */
+        }
+
+        .messages {
+            max-height: 100%;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            flex-grow: 1;  /* Заставим блок сообщений занимать оставшееся пространство */
+            padding-right: 10px;
+        }
+
+        .message {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            max-width: 80%;
+        }
+
+        .user-message {
+            background-color: #d1e7ff;
+            align-self: flex-end;
+        }
+
+        .bot-message {
+            background-color: #f1f1f1;
+            align-self: flex-start;
+        }
+
+        .context-message {
+            background-color: #e7f3fe;
+            color: #333;
+            font-style: italic;
+        }
+
+        .input-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: auto; /* Ставим поле ввода внизу */
+            width: 100%;
+        }
+
+        input[type="text"] {
+            width: 80%;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+
+        button {
+            width: 15%;
+            padding: 10px;
+            border-radius: 4px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        /* Стили для поля ID пользователя */
+        #user-id-container {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.1);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+        }
+
+        #user-id {
+            width: 80px;
+            text-align: center;
+            border: 1px solid #ccc;
+            padding: 5px;
+            border-radius: 4px;
+        }
+
+        /* Стили для вывода предпочтений пользователя */
+        .preferences-message {
+            background-color: #e1f7d5;
+            color: #333;
+            font-style: italic;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+
+        /* Добавляем стили для сохранения отступов и форматирования */
+        pre {
+            white-space: pre-wrap;       /* Сохраняем пробелы и переносы строк */
+            word-wrap: break-word;       /* Автоматически переносим длинные слова */
+            font-family: Arial, sans-serif; /* Устанавливаем тот же шрифт, что и для основного текста */
+        }
+
+    </style>
+</head>
+<body>
+    <!-- Скрытое поле для ID пользователя (теперь можно редактировать) -->
+    <div id="user-id-container">
+        User ID: <input type="text" id="user-id" value="1" />
+    </div>
+
+    <!-- Основной контейнер чата -->
+    <div class="chat-container">
+        <div class="messages" id="messages"></div>
+
+        <!-- Контейнер для ввода сообщения -->
+        <div class="input-container">
+            <input type="text" id="user-input" placeholder="Type your message..." />
+            <button id="send-button">Send</button>
+        </div>
+    </div>
+
+    <script>
+        // Получаем элементы
+        const sendButton = document.getElementById('send-button');
+        const userInput = document.getElementById('user-input');
+        const messagesContainer = document.getElementById('messages');
+        const userIdField = document.getElementById('user-id');
+
+        // Функция для добавления сообщений в чат
+        function addMessage(text, sender, isContext=false, isPreferences=false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message');
+            messageDiv.classList.add(sender === 'user' ? 'user-message' : 'bot-message');
+            if (isContext) {
+                messageDiv.classList.add('context-message');
+            }
+            if (isPreferences) {
+                messageDiv.classList.add('preferences-message');
+            }
+
+            // Заменяем звездочки на теги <strong> для жирного текста
+            text = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+
+            // Используем <pre> для сохранения отступов и форматирования
+            messageDiv.innerHTML = `<pre>${text}</pre>`;
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;  // Автоскролл
+        }
+
+        // Функция для отправки сообщения
+        async function sendMessage() {
+            const userMessage = userInput.value.trim();
+            if (!userMessage) return;
+
+            addMessage(userMessage, 'user');
+            userInput.value = '';
+
+            // Получаем ID пользователя (которое теперь можно редактировать)
+            const userId = userIdField.value;
+
+            // Отправляем запрос на сервер с ID пользователя и текстом
+            const response = await fetch('/query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: userMessage,
+                    user_id: userId,  // Отправляем ID пользователя
+                    top_k: 50
+                })
+            });
+            const data = await response.json();
+
+            // Добавляем контекст (если он есть)
+            if (data.context) {
+                addMessage(data.context, 'bot', true); // Добавляем контекст в чат как "context-message"
+            }
+
+            // Добавляем предпочтения пользователя (если они есть)
+            if (data.preferences) {
+                const preferencesText = `Likes: ${data.preferences.likes.join(", ")}. Dislikes: ${data.preferences.dislikes.join(", ")}`;
+                addMessage(preferencesText, 'bot', false, true); // Добавляем предпочтения в чат как "preferences-message"
+            }
+
+            // Добавляем ответ от бота
+            addMessage(data.response.content, 'bot');
+        }
+
+        // Обработчик нажатия кнопки
+        sendButton.addEventListener('click', sendMessage);
+
+        // Обработчик нажатия клавиши Enter
+        userInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
