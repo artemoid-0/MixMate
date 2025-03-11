@@ -1,8 +1,0 @@
-fastapi==0.115.8
-pydantic==2.10.6
-langchain==0.3.17
-sentence-transformers==3.4.1
-pinecone==5.4.2
-requests==2.31.0
-pandas==2.2.3
-kaggle==1.6.17

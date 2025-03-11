@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat with Cocktails Bot</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -14,7 +15,6 @@
             flex-direction: column;
             height: 100vh;
         }
-
         .chat-container {
             width: 100%;
             max-width: 600px;
@@ -27,7 +27,6 @@
             flex-direction: column;
             height: 70vh;
         }
-
         .messages {
             max-height: 100%;
             overflow-y: auto;
@@ -35,44 +34,29 @@
             flex-grow: 1;
             padding-right: 10px;
         }
-
         .message {
             padding: 10px;
             margin-bottom: 10px;
             border-radius: 5px;
             max-width: 80%;
+            word-wrap: break-word;
         }
-
-        .user-message {
-            background-color: #d1e7ff;
-            align-self: flex-end;
-        }
-
-        .bot-message {
-            background-color: #f1f1f1;
-            align-self: flex-start;
-        }
-
-        .context-message {
-            background-color: #e7f3fe;
-            color: #333;
-            font-style: italic;
-        }
-
+        .user-message { background-color: #d1e7ff; align-self: flex-end; }
+        .bot-message { background-color: #f1f1f1; align-self: flex-start; }
+        .system-message { background-color: #fff3cd; align-self: flex-start; }
+        .db-message { background-color: #d4edda; align-self: flex-start; }
         .input-container {
             display: flex;
             justify-content: space-between;
             margin-top: auto;
             width: 100%;
         }
-
         input[type="text"] {
             width: 80%;
             padding: 10px;
             border-radius: 4px;
             border: 1px solid #ddd;
         }
-
         button {
             width: 15%;
             padding: 10px;
@@ -82,56 +66,23 @@
             border: none;
             cursor: pointer;
         }
-
-        button:hover {
-            background-color: #45a049;
-        }
-
-        #user-id-container {
-            position: absolute;
-            top: 10px;
-            right: 20px;
-            background-color: rgba(0, 0, 0, 0.1);
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 14px;
+        button:hover { background-color: #45a049; }
+        .toggle-container {
             display: flex;
             align-items: center;
-        }
-
-        #user-id {
-            width: 80px;
-            text-align: center;
-            border: 1px solid #ccc;
-            padding: 5px;
-            border-radius: 4px;
-        }
-
-        .preferences-message {
-            background-color: #e1f7d5;
-            color: #333;
-            font-style: italic;
-            padding: 10px;
-            border-radius: 5px;
             margin-bottom: 10px;
         }
-
-        pre {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-family: Arial, sans-serif;
-        }
-
+        .toggle-container label { margin-left: 10px; }
     </style>
 </head>
 <body>
-    <div id="user-id-container">
-        User ID: <input type="text" id="user-id" value="1" />
-    </div>
-
     <div class="chat-container">
+        <div class="toggle-container">
+            <input type="checkbox" id="toggle-system-messages" checked>
+            <label for="toggle-system-messages">Show system messages</label>
+        </div>
+        <input type="text" id="user-id" placeholder="Enter User ID..." value="1"/>
         <div class="messages" id="messages"></div>
-
         <div class="input-container">
             <input type="text" id="user-input" placeholder="Type your message..." />
             <button id="send-button">Send</button>
@@ -141,61 +92,69 @@
     <script>
         const sendButton = document.getElementById('send-button');
         const userInput = document.getElementById('user-input');
+        const userIdInput = document.getElementById('user-id');
         const messagesContainer = document.getElementById('messages');
-        const userIdField = document.getElementById('user-id');
+        const toggleSystemMessages = document.getElementById('toggle-system-messages');
 
-        function addMessage(text, sender, isContext=false, isPreferences=false) {
+        function addMessage(text, sender, type = "bot-message") {
+            if (!toggleSystemMessages.checked && (type === "system-message" || type === "db-message")) {
+                return;
+            }
             const messageDiv = document.createElement('div');
-            messageDiv.classList.add('message');
-            messageDiv.classList.add(sender === 'user' ? 'user-message' : 'bot-message');
-            if (isContext) {
-                messageDiv.classList.add('context-message');
-            }
-            if (isPreferences) {
-                messageDiv.classList.add('preferences-message');
-            }
-
-            text = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-
-            messageDiv.innerHTML = `<pre>${text}</pre>`;
+            messageDiv.classList.add('message', type);
+            messageDiv.innerHTML = marked.parse(text);
             messagesContainer.appendChild(messageDiv);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
 
         async function sendMessage() {
             const userMessage = userInput.value.trim();
+            const userId = userIdInput.value.trim();
             if (!userMessage) return;
 
-            addMessage(userMessage, 'user');
+            addMessage(userMessage, 'user', 'user-message');
             userInput.value = '';
 
-            const userId = userIdField.value;
+            try {
+                const response = await fetch('/cocktail_request', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-ID': userId
+                    },
+                    body: JSON.stringify({ user_input: userMessage })
+                });
+                const data = await response.json();
 
-            const response = await fetch('/query', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    query: userMessage,
-                    user_id: userId,
-                    top_k: 50
-                })
-            });
-            const data = await response.json();
+                if (data.tool_calls) {
+                    data.tool_calls.forEach(toolCall => {
+                        const functionName = toolCall.name;
+                        const argumentsStr = JSON.stringify(toolCall.arguments, null, 2);
+                        addMessage(`**Function called:** ${functionName}\n**Arguments:**\n\
+                        \`\`\`json\n${argumentsStr}\n\`\`\``, 'bot', 'system-message');
+                    });
+                }
 
-            if (data.context) {
-                addMessage(data.context, 'bot', true);
+                if (data.retrieved_preferences) {
+                    addMessage(`**Retrieved preferences:**\n\`\`\`json\n${JSON.stringify(data.retrieved_preferences, null, 2)}\n\`\`\``, 'bot', 'preferences-message');
+                }
+
+                if (data.retrieved_info) {
+                    const simplifiedInfo = data.retrieved_info.map(cocktail => ({
+                        id: cocktail.id,
+                        name: cocktail.name
+                    }));
+                    addMessage(`**Database results:**\n\`\`\`json\n${JSON.stringify(simplifiedInfo, null, 2)}\n\`\`\``, 'bot', 'db-message');
+                }
+
+                addMessage(data.llm_response || 'No response from bot.', 'bot', 'bot-message');
+
+            } catch (error) {
+                addMessage('Error communicating with the server.', 'bot', 'bot-message');
             }
-
-            if (data.preferences) {
-                const preferencesText = `Likes: ${data.preferences.likes.join(", ")}. Dislikes: ${data.preferences.dislikes.join(", ")}`;
-                addMessage(preferencesText, 'bot', false, true);
-            }
-
-            addMessage(data.response.content, 'bot');
         }
 
         sendButton.addEventListener('click', sendMessage);
-
         userInput.addEventListener('keypress', function(event) {
             if (event.key === 'Enter') {
                 sendMessage();
